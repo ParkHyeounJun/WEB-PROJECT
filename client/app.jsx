@@ -4,21 +4,6 @@ var React = require('react');
 var io = require('socket.io-client');
 var socket = io.connect();
 
-var UsersList = React.createClass({
-    render() {
-        return (
-            <div className='users'>
-                <h3>참여자들</h3>
-                <ul>
-                    {this.props.users.map((user, i) => (
-                        <li key={i}>{user}</li>
-                    ))}
-                </ul>
-            </div>
-        );
-    }
-});
-
 var Message = React.createClass({
     render() {
         const { user, text, timestamp, currentUser } = this.props;
@@ -60,34 +45,13 @@ var MessageForm = React.createClass({
     handleSubmit(e) {
         e.preventDefault();
         var message = {
+            name: this.props.currentRoom,
             id: this.props.user,
             message: this.state.text,
             timestamp: new Date().toISOString() // 현재 시간을 타임스탬프로 추가
         };
-        this.props.onMessageSubmit(message);
+        socket.emit('send:message', message); // 서버에 메시지 전송
         this.setState({ text: '' });
-
-        // 메시지를 서버에 전송하여 저장
-        fetch('/api/chatting', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                name: this.props.currentRoom, // 채팅방 이름
-                id: this.props.user, // 사용자 ID
-                message: this.state.text
-            })
-        }).then(response => {
-            if (!response.ok) {
-                throw new Error('메시지 저장 오류');
-            }
-            return response.json();
-        }).then(data => {
-            console.log('메시지가 저장되었습니다:', data);
-        }).catch(error => {
-            console.error('메시지 저장 중 오류가 발생했습니다:', error);
-        });
     },
 
     changeHandler(e) {
@@ -104,7 +68,7 @@ var MessageForm = React.createClass({
                         onChange={this.changeHandler}
                         value={this.state.text}
                     />
-                    <button type="submit">Send</button>
+                    <button className='sendButton' type="submit">Send</button>
                 </form>
             </div>
         );
@@ -113,42 +77,32 @@ var MessageForm = React.createClass({
 
 var ChatApp = React.createClass({
     getInitialState() {
-        return { 
-            users: [], 
-            messages: [], 
+        return {
+            users: [],
+            messages: [],
             text: '',
             searchQuery: '',
             showCreateDialog: false,
             showJoinDialog: false,
             currentRoom: null,
-            user: this.props.user // 로그인한 사용자 이름을 초기 상태로 설정
+            user: this.props.user,
+            chatRooms: [], // 새로운 state 추가
+            showChatRooms: false // 채팅방 목록 표시 여부 state 추가
         };
     },
 
     componentDidMount() {
         socket.on('init', this._initialize);
-        socket.on('send:message', this._messageRecieve);
+        socket.on('send:message', this.handleMessageSubmit);
         socket.on('user:join', this._userJoined);
         socket.on('user:left', this._userLeft);
         socket.on('change:name', this._userChangedName);
-    },
-
-    _initialize(data) {
-        var { users, name } = data;
-        this.setState({ users, user: this.props.user || name });
-    },
-
-    _messageRecieve(message) {
-        var { messages } = this.state;
-        messages.push(message);
-        this.setState({ messages });
     },
 
     handleMessageSubmit(message) {
         var { messages } = this.state;
         messages.push(message);
         this.setState({ messages });
-        socket.emit('send:message', message);
     },
 
     handleChangeName(newName) {
@@ -170,9 +124,18 @@ var ChatApp = React.createClass({
 
     handleSearchSubmit(e) {
         e.preventDefault();
-        const { searchQuery } = this.state;
-
-        // 채팅방 검색
+        const { searchQuery, currentRoom } = this.state;
+    
+        if (searchQuery.trim() === "") {
+            alert("채팅방 이름을 입력하세요.");
+            return;
+        }
+    
+        if (currentRoom) {
+            socket.emit('leave:room', currentRoom);
+            this.setState({ messages: [] });
+        }
+    
         fetch(`/api/chatroom?name=${searchQuery}`)
             .then(response => {
                 if (response.ok) {
@@ -183,22 +146,31 @@ var ChatApp = React.createClass({
                 }
             })
             .then(data => {
-                this.setState({ showJoinDialog: true, currentRoom: data.name });
+                this.setState({ showJoinDialog: true, currentRoom: data.name, showChatRooms: false });
             })
             .catch(error => {
                 console.error('채팅방 검색 중 오류가 발생했습니다:', error);
             });
     },
+    
 
     handleJoinRoom(confirm) {
         if (confirm) {
             const { currentRoom } = this.state;
 
-            // 채팅방 내역 가져오기
             fetch(`/api/chatting?name=${currentRoom}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    } else if (response.status === 404) {
+                        return [];
+                    } else {
+                        throw new Error('채팅방 검색 중 오류가 발생했습니다.');
+                    }
+                })
                 .then(messages => {
                     this.setState({ messages, showJoinDialog: false });
+                    socket.emit('join:room', currentRoom);
                 })
                 .catch(error => {
                     console.error('채팅방 검색 중 오류가 발생했습니다:', error);
@@ -212,7 +184,6 @@ var ChatApp = React.createClass({
         if (confirm) {
             const { searchQuery } = this.state;
 
-            // 채팅방 생성
             fetch('/api/chatroom', {
                 method: 'POST',
                 headers: {
@@ -221,7 +192,8 @@ var ChatApp = React.createClass({
                 body: JSON.stringify({ name: searchQuery })
             }).then(response => {
                 if (response.ok) {
-                    this.setState({ currentRoom: searchQuery, messages: [] });
+                    this.setState({ currentRoom: searchQuery, messages: [], showChatRooms: false });
+                    socket.emit('join:room', searchQuery);
                 } else {
                     throw new Error('채팅방 생성 오류');
                 }
@@ -233,8 +205,39 @@ var ChatApp = React.createClass({
     },
 
     handleLeaveRoom() {
+        const { currentRoom } = this.state;
         this.setState({ currentRoom: null, messages: [] });
+        socket.emit('leave:room', currentRoom);
     },
+
+    handleIconClick() {
+        const { user } = this.state;
+    
+        this.setState({ currentRoom: null, messages: [] }, () => { // 기존 채팅방 없애기
+            fetch(`/api/user/chatrooms?id=${user}`)
+                .then(response => response.json())
+                .then(data => {
+                    this.setState({ chatRooms: data, showChatRooms: true });
+                })
+                .catch(error => {
+                    console.error('채팅방 목록 조회 중 오류가 발생했습니다:', error);
+                });
+        });
+    },
+
+    handleRoomClick(roomName) {
+        this.setState({ currentRoom: roomName, showChatRooms: false }, () => {
+            socket.emit('join:room', roomName);
+            fetch(`/api/chatting?name=${roomName}`)
+                .then(response => response.json())
+                .then(data => {
+                    this.setState({ messages: data });
+                })
+                .catch(error => {
+                    console.error('채팅방 메시지 로드 중 오류가 발생했습니다:', error);
+                });
+        });
+    },    
 
     renderCreateRoomDialog() {
         return (
@@ -256,6 +259,25 @@ var ChatApp = React.createClass({
         );
     },
 
+    renderChatRooms() {
+        if (!this.state.showChatRooms) {
+            return null; // 채팅방 목록이 숨겨진 경우 아무것도 렌더링하지 않음
+        }
+    
+        return (
+            <div className="chatrooms">
+                <h2>My Chat Rooms</h2>
+                <ul>
+                    {this.state.chatRooms.map((room, index) => (
+                        <li key={index} onClick={() => this.handleRoomClick(room.name)} className="chatroom-item">
+                            <span>{room.name}</span> {room.unread_count > 0 && <span>({room.unread_count})</span>}
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        );
+    },    
+
     render() {
         return (
             <div className='app-container'>
@@ -268,11 +290,11 @@ var ChatApp = React.createClass({
                             value={this.state.searchQuery}
                             onChange={this.handleSearchChange}
                         />
-                        <button type="submit">Search</button>
+                        <button className='searchbutton' type="submit">Search</button>
                     </form>
                     <ul>
                         <div><img src="/user.png" alt="User Icon" /></div>
-                        <div><img src="/message.png" alt="Message Icon" /></div>
+                        <div onClick={this.handleIconClick}><img src="/message.png" alt="Message Icon" /></div>
                         <div><img src="/notification.png" alt="Notification Icon" /></div>
                         <div><img src="/setting.png" alt="Settings Icon" /></div>
                     </ul>
@@ -280,6 +302,7 @@ var ChatApp = React.createClass({
                 <div className='main-content'>
                     {this.state.showCreateDialog && this.renderCreateRoomDialog()}
                     {this.state.showJoinDialog && this.renderJoinRoomDialog()}
+                    {this.state.showChatRooms && this.renderChatRooms()}
                     {this.state.currentRoom && (
                         <div className="new-room-header">
                             <h2>{this.state.currentRoom}</h2>
@@ -295,6 +318,8 @@ var ChatApp = React.createClass({
         );
     }
 });
+
+module.exports = ChatApp;
 
 var SignupApp = React.createClass({
     getInitialState: function() {
@@ -480,7 +505,7 @@ var LoginApp = React.createClass({
                             onChange={this.handlePasswordChange}
                         />
                     </div>
-                    <button type="submit">Login</button>
+                    <button className='loginbutton' type="submit">Login</button>
                 </form>
                 {this.state.error && <p className="error">{this.state.error}</p>}
                 <p>Don't have an account? <a href="#" onClick={this.handleSwitchToSignup}>Signup here</a></p>

@@ -1,12 +1,11 @@
 const express = require('express');
-const router = express.Router();
 const mysql = require('mysql');
 const http = require('http');
-
-var socket = require('./routes/socket.js');
+const socketIO = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
+const io = socketIO(server);
 
 // JSON 파싱 미들웨어
 app.use(express.json());
@@ -26,6 +25,9 @@ connection.connect(err => {
   }
   console.log('MySQL에 성공적으로 연결되었습니다.');
 });
+
+// 라우터 설정
+const router = express.Router();
 
 // 사용자 등록 라우트
 router.post('/signup', (req, res) => {
@@ -74,24 +76,11 @@ router.post('/chatroom', (req, res) => {
   });
 });
 
-// 메시지 저장 라우트
-router.post('/chatting', (req, res) => {
-  const { name, id, message } = req.body;
-
-  const query = 'INSERT INTO chatting (name, id, message) VALUES (?, ?, ?)';
-  connection.query(query, [name, id, message], (err, result) => {
-    if (err) {
-      return res.status(500).send('메시지 저장 오류: ' + err.message);
-    }
-    res.status(201).send('메시지가 성공적으로 저장되었습니다.');
-  });
-});
-
 // 채팅방 내역 검색 라우트
 router.get('/chatting', (req, res) => {
   const { name } = req.query;
 
-  const query = 'SELECT * FROM chatting WHERE name = ?';
+  const query = 'SELECT * FROM chatting WHERE name = ? ORDER BY timestamp';
   connection.query(query, [name], (err, results) => {
     if (err) {
       return res.status(500).send('채팅방 검색 오류: ' + err.message);
@@ -121,19 +110,61 @@ router.get('/chatroom', (req, res) => {
   });
 });
 
+// 사용자 채팅방 목록 조회 라우트
+router.get('/user/chatrooms', (req, res) => {
+  const { id } = req.query;
+
+  const query = 'SELECT DISTINCT name FROM chatting WHERE id = ?';
+  connection.query(query, [id], (err, results) => {
+    if (err) {
+      return res.status(500).send('채팅방 목록 조회 오류: ' + err.message);
+    }
+    res.status(200).json(results);
+  });
+});
+
 app.use('/api', router);
 
-app.set('views', __dirname + '/views');
+// 정적 파일 제공
 app.use(express.static(__dirname + '/public'));
-app.set('port', 3000);
 
-if (process.env.NODE_ENV === 'development') {
-  app.use(express.errorHandler({ dumpExceptions: true, showStack: true }));
-}
+// View 설정
+app.set('views', __dirname + '/views');
+app.set('view engine', 'ejs');
+
+// 포트 설정
+app.set('port', process.env.PORT || 3000);
 
 // Socket.io 통신
-const io = require('socket.io').listen(server);
-io.sockets.on('connection', socket);
+io.on('connection', (socket) => {
+  console.log('New client connected');
+
+  socket.on('join:room', (room) => {
+    socket.join(room);
+    console.log(`Client joined room: ${room}`);
+  });
+
+  socket.on('leave:room', (room) => {
+    socket.leave(room);
+    console.log(`Client left room: ${room}`);
+  });
+
+  socket.on('send:message', (message) => {
+    const query = 'INSERT INTO chatting (name, id, message) VALUES (?, ?, ?)';
+    connection.query(query, [message.name, message.id, message.message], (err, result) => {
+      if (err) {
+        console.error('메시지 저장 오류: ', err.message);
+        return;
+      }
+      io.to(message.name).emit('send:message', message);
+      console.log(`Message sent to room ${message.name}: ${message.message}`);
+    });
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected');
+  });
+});
 
 // 서버 시작
 server.listen(app.get('port'), function () {
