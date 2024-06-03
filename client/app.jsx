@@ -409,7 +409,7 @@ var SignupApp = React.createClass({
                             onChange={this.handleConfirmPasswordChange}
                         />
                     </div>
-                    <button type="submit">Signup</button>
+                    <button className='signupbutton' type="submit">Signup</button>
                 </form>
                 {this.state.error && <p className="error">{this.state.error}</p>}
                 <p>Already have an account? <a href="#" onClick={this.props.onSwitchToLogin}>Login here</a></p>

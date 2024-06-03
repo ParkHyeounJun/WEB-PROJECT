@@ -582,7 +582,7 @@ var SignupApp = React.createClass({
                 ),
                 React.createElement(
                     'button',
-                    { type: 'submit' },
+                    { className: 'signupbutton', type: 'submit' },
                     'Signup'
                 )
             ),

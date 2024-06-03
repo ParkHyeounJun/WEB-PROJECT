@@ -47,6 +47,17 @@ input[type="text"], input[type="password"] {
     font-size: 16px;
 }
 
+.signupbutton{
+    width: 382px;
+    padding: 10px;
+    background-color: #02499B;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
 .searchbutton{
     width: 280px;
     padding: 10px;
@@ -327,6 +338,7 @@ p.error {
 
 .chatrooms {
     width: 100%;
+    height: 100%;
     border: 1px solid #ddd;
     border-radius: 5px;
     padding: 20px;
@@ -349,11 +361,24 @@ p.error {
 
 .chatroom-item {
     cursor: pointer;
-    padding: 10px;
-    border-radius: 5px;
-    transition: background-color 0.3s;
+    padding: 15px; /* Increased padding for more space */
+    margin: 20px 0; /* Margin to separate each chat room item */
+    border-radius: 10px; /* Smoother rounded corners */
+    transition: background-color 0.3s, transform 0.2s, box-shadow 0.2s; /* Smooth transitions */
+    background-color: #f0f0f0; /* Light background color */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Subtle box shadow */
+    display: flex; /* Flexbox for better content alignment */
+    align-items: center; /* Vertically align content */
 }
 
 .chatroom-item:hover {
-    background-color: #f1f1f1;
+    background-color: #e0e0e0; /* Darker background on hover */
+    transform: translateY(-2px); /* Slight lift effect */
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15); /* More pronounced shadow */
+}
+
+.chatroom-item span {
+    flex-grow: 1; /* Span takes up available space */
+    font-size: 16px; /* Larger font size */
+    font-weight: 500; /* Medium font weight */
 }

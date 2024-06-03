@@ -7,8 +7,12 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
 
+// 라우터 설정
+const router = express.Router();
+
 // JSON 파싱 미들웨어
 app.use(express.json());
+app.use('/api', router);
 
 // MySQL 연결 설정
 const connection = mysql.createConnection({
@@ -25,9 +29,6 @@ connection.connect(err => {
   }
   console.log('MySQL에 성공적으로 연결되었습니다.');
 });
-
-// 라우터 설정
-const router = express.Router();
 
 // 사용자 등록 라우트
 router.post('/signup', (req, res) => {
@@ -46,7 +47,6 @@ router.post('/signup', (req, res) => {
   });
 });
 
-// 사용자 로그인 라우트
 router.post('/login', (req, res) => {
   const { id, pw } = req.body;
 
@@ -63,7 +63,6 @@ router.post('/login', (req, res) => {
   });
 });
 
-// 채팅방 생성 라우트
 router.post('/chatroom', (req, res) => {
   const { name } = req.body;
 
@@ -123,8 +122,6 @@ router.get('/user/chatrooms', (req, res) => {
   });
 });
 
-app.use('/api', router);
-
 // 정적 파일 제공
 app.use(express.static(__dirname + '/public'));
 
@@ -149,17 +146,17 @@ io.on('connection', (socket) => {
     console.log(`Client left room: ${room}`);
   });
 
-  socket.on('send:message', (message) => {
-    const query = 'INSERT INTO chatting (name, id, message) VALUES (?, ?, ?)';
-    connection.query(query, [message.name, message.id, message.message], (err, result) => {
-      if (err) {
-        console.error('메시지 저장 오류: ', err.message);
-        return;
-      }
-      io.to(message.name).emit('send:message', message);
-      console.log(`Message sent to room ${message.name}: ${message.message}`);
+    socket.on('send:message', (message) => {
+      const query = 'INSERT INTO chatting (name, id, message) VALUES (?, ?, ?)';
+      connection.query(query, [message.name, message.id, message.message], (err, result) => {
+        if (err) {
+          console.error('메시지 저장 오류: ', err.message);
+          return;
+        }
+        io.to(message.name).emit('send:message', message);
+        console.log(`Message sent to room ${message.name}: ${message.message}`);
+      });
     });
-  });
 
   socket.on('disconnect', () => {
     console.log('Client disconnected');
